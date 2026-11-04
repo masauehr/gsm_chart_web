@@ -5,13 +5,13 @@
   const $ = (id) => document.getElementById(id);
   const IMG_W = 950, IMG_H = 760, TITLE_H = 22;           // 元画像のサイズと見出し帯の高さ
   const MIN_W = IMG_W * 0.25, MAX_W = IMG_W * 2;          // 0.25〜2倍（元アプリと同じ）
-  // 並び順（地上→低層→高層）。未知の図は末尾
-  const ORDER = ["surf", "tenki", "t975", "t925", "t850", "ept850", "t700", "t500", "z500", "jet300"];
+  // 並び順（高層→地上）。整列すると左上が最も高い高度、右下が地上(surf)になる。未知の図は末尾
+  const ORDER = ["jet300", "z500", "t500", "t700", "ept850", "t850", "t975", "t925", "tenki", "surf"];
   // 上部バーのボタン用の短い名前（重複しないように）
   const SHORT = { surf: "地上降水", tenki: "天気", t975: "975", t925: "925", t850: "850", ept850: "850EPT",
                   t700: "700", t500: "500気温", z500: "500高度", jet300: "300" };
   const REGION_DEFAULT = "japan";
-  const DEFAULT_ON = ["surf", "t925", "t850", "t700", "z500", "jet300"];
+  const DEFAULT_ON = ["jet300", "z500", "t700", "t850", "t925", "surf"];
   const LS_KEY = "gsmBoard.v1";
   const pad = (n) => String(n).padStart(2, "0");
 
