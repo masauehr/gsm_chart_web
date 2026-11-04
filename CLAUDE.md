@@ -27,4 +27,4 @@
 - 更新APIはローカル限定。GETでもPOSTでも `_local_only` を外さない。
 
 ## 画用紙版
-`web/board/`（http://127.0.0.1:8780/board/）。通常版 `web/app.js` とは独立。操作は gsm-chart-web.md の表を参照。
+`web/board/`（http://127.0.0.1:8780/board/）。通常版 `web/app.js` とは独立。パネル単位（図種＋表示範囲）で管理し、localStorage キーは `gsmBoard.v2`（構造を変えたらキーを上げる）。上部メニューの高さは ResizeObserver で追従。操作は gsm-chart-web.md の表を参照。

@@ -1,15 +1,21 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; font: 13px/1.4 -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; }
 body { overflow: hidden; background: #e9e6df; } /* 画用紙色 */
-#bar { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 10000; display: flex; align-items: center; gap: 10px;
-  padding: 0 10px; background: rgba(255,255,255,.95); border-bottom: 1px solid #bbb; white-space: nowrap; overflow-x: auto; }
+#bar { position: fixed; top: 0; left: 0; right: 0; z-index: 10000; display: flex; flex-direction: column; gap: 4px;
+  padding: 4px 10px; background: rgba(255,255,255,.96); border-bottom: 1px solid #bbb; }
+#bar .row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 28px; } /* 狭い窓では折り返す */
+#bar .sep { width: 1px; height: 20px; background: #ccc; margin: 0 2px; }
+#bar input[type=text] { font: inherit; padding: 3px 6px; border: 1px solid #bbb; border-radius: 5px; }
+#toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30000; background: #333; color: #fff;
+  padding: 6px 14px; border-radius: 6px; font-size: 13px; }
+#toast[hidden] { display: none; }
 #bar.hide { display: none; }
-#dateLabel { font: bold 16px "SF Mono", Menlo, monospace; min-width: 380px; }
+#dateLabel { font: bold 16px "SF Mono", Menlo, monospace; min-width: 360px; }
 #bar select, #bar button, #bar a { font: inherit; padding: 3px 8px; border: 1px solid #bbb; border-radius: 5px; background: #fff; color: inherit; cursor: pointer; text-decoration: none; }
 #chartToggles { display: inline-flex; gap: 4px; }
 #chartToggles button.on { background: #1a4fd0; color: #fff; border-color: #1a4fd0; }
-#board { position: absolute; inset: 40px 0 0 0; overflow: auto; }
-body.nobar #board { top: 0; }
+#board { position: absolute; top: 72px; left: 0; right: 0; bottom: 0; overflow: auto; } /* top は board.js が上部メニューの高さに合わせる */
+body.nobar #board { top: 0 !important; }
 .panel { position: absolute; background: #fff; border: 1px solid #333; box-shadow: 0 2px 8px rgba(0,0,0,.35); user-select: none; }
 .panel.active { outline: 2px solid #1a4fd0; }
 .panel .title { height: 22px; display: flex; align-items: center; justify-content: space-between; padding: 0 6px;
@@ -30,3 +36,10 @@ body.nobar #board { top: 0; }
 #help button { font: inherit; padding: 3px 12px; }
 #updateMsg { font-size: 12px; color: #556; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
 #btnUpdate:disabled { opacity: .5; cursor: default; }
+.panel .title .left { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; overflow: hidden; }
+.panel .title .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel .title select { font-size: 11px; padding: 0 2px; max-width: 120px; border-radius: 3px; border: 1px solid #667; background: #4c566a; color: #fff; cursor: pointer; }
+.panel .title .btns { display: flex; align-items: center; gap: 4px; flex: none; }
+.panel .title .dup, .panel .title .x { cursor: pointer; padding: 0 3px; }
+.panel .title .dup:hover, .panel .title .x:hover { color: #ffd166; }
+.panel.variant .title { background: #5b4b8a; }

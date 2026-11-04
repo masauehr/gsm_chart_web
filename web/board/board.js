@@ -1,22 +1,31 @@
-// GSM天気図ボード（画用紙版）: 複数の図を並べ、マウスで移動・拡大縮小し、キーで時間を前後させる
+// GSM天気図ボード（画用紙版）
+// 複数の図を並べ、マウスで移動・拡大縮小し、キーで時間を前後させる。
+// 各図（パネル）は「図種 + 表示範囲」を持つ。表示範囲が null なら全体の表示範囲に揃う（既定）。
+// 同じ図種を別の表示範囲で複数並べる（広さ違い）ことも、配置を名前を付けて登録することもできる。
 // 画像規則は通常版と同じ: /output/{init}/{region}/{chart}_{ft:03d}.png、一覧は /output/manifest.json
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
   const IMG_W = 950, IMG_H = 760, TITLE_H = 22;           // 元画像のサイズと見出し帯の高さ
   const MIN_W = IMG_W * 0.25, MAX_W = IMG_W * 2;          // 0.25〜2倍（元アプリと同じ）
-  // 並び順（高層→地上）。整列すると左上が最も高い高度、右下が地上(surf)になる。未知の図は末尾
-  const ORDER = ["jet300", "z500", "t500", "t700", "ept850", "t850", "t975", "t925", "tenki", "surf"];
-  // 上部バーのボタン用の短い名前（重複しないように）
-  const SHORT = { surf: "地上降水", tenki: "天気", t975: "975", t925: "925", t850: "850", ept850: "850EPT",
-                  t700: "700", t500: "500気温", z500: "500高度", jet300: "300" };
-  const REGION_DEFAULT = "japan";
-  const DEFAULT_ON = ["jet300", "z500", "t700", "t850", "t925", "surf"];
-  const LS_KEY = "gsmBoard.v1";
+  const LS_KEY = "gsmBoard.v2";                            // 配置の自動保存
+  const LS_PRESETS = "gsmBoard.presets.v1";                // 登録した配置
   const pad = (n) => String(n).padStart(2, "0");
 
-  const S = { m: null, init: null, region: null, ft: 0, panels: {}, zTop: 1, active: null, timer: null };
-  const els = {}; // chart → {root, img, nodata, title}
+  // 並び順（高層→地上）。整列すると左上が最も高い高度、右下が地上(surf)になる。未知の図は末尾
+  const ORDER = ["jet300", "z500", "t500", "t700", "ept850", "t850", "t975", "t925", "tenki", "surf"];
+  const DEFAULT_ON = ["jet300", "z500", "t700", "t850", "t925", "surf"];
+  const REGION_DEFAULT = "japan";
+  // 上部メニューとパネル見出し用の短い名前
+  const SHORT = { surf: "地上降水", tenki: "天気", t975: "975", t925: "925", t850: "850", ept850: "850EPT",
+                  t700: "700", t500: "500気温", z500: "500高度", jet300: "300" };
+  const RSHORT = { japan: "日本周辺", okinawa: "沖縄周辺", asia: "東アジア", japan3: "日本域0.125°", okinawa3: "南西域0.125°" };
+  const RORDER = ["japan", "okinawa", "asia", "japan3", "okinawa3"];
+
+  // items: パネルの一覧。{id, chart, region(null=全体に揃う), primary, on, x, y, w, z}
+  //   primary=true: 上部メニューのON/OFFで操作する基本パネル。false: 広さ違いで増やした複製（✕で削除）
+  const S = { m: null, init: null, region: null, ft: 0, items: [], zTop: 1, seq: 0, active: null, timer: null };
+  const els = {}; // id → {root, img, nodata, name, sel, wantUrl}
 
   const imgUrl = (init, region, chart, ft) => `/output/${init}/${region}/${chart}_${String(ft).padStart(3, "0")}.png`;
   const parseInit = (s) => new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8), +s.slice(8, 10)));
@@ -25,122 +34,196 @@
     return `${t.getUTCMonth() + 1}/${pad(t.getUTCDate())}(${"日月火水木金土"[t.getUTCDay()]}) ${pad(t.getUTCHours())}時${tz}`;
   };
   const cur = () => S.m.inits.find((i) => i.init === S.init);
-  const charts = () => Object.keys((cur().regions[S.region]) || {})
-    .sort((a, b) => (ORDER.indexOf(a) + 99) % 99 - (ORDER.indexOf(b) + 99) % 99);
+  const rank = (arr, v) => { const i = arr.indexOf(v); return i < 0 ? 99 : i; };
+  const regionsOf = () => Object.keys(cur().regions).sort((a, b) => rank(RORDER, a) - rank(RORDER, b));
+  const chartsOf = () => [...new Set(Object.values(cur().regions).flatMap((r) => Object.keys(r)))]
+    .sort((a, b) => rank(ORDER, a) - rank(ORDER, b));
+  const getItem = (id) => S.items.find((i) => i.id === id);
+  const effRegion = (it) => it.region || S.region;
+  const availFts = (it) => ((cur().regions[effRegion(it)] || {})[it.chart]) || [];
+  // 予報時間 ft がその図に無いとき（刻みの粗い範囲）は、直前の予報時間、無ければ最小のものを使う
+  const pickFt = (list, ft) => {
+    if (list.includes(ft)) return ft;
+    const before = list.filter((f) => f <= ft);
+    return before.length ? Math.max(...before) : Math.min(...list);
+  };
+  const visible = () => S.items.filter((i) => i.on);
 
-  // 現在の初期値・地域で選べるFT（表示中の図の和集合）
+  // 表示中の図のFTの和集合（無ければ全図）
   function fts() {
-    const reg = cur().regions[S.region] || {};
     const set = new Set();
-    for (const c of Object.keys(S.panels)) if (S.panels[c].on && reg[c]) reg[c].forEach((f) => set.add(f));
-    if (!set.size) Object.values(reg).forEach((a) => a.forEach((f) => set.add(f)));
+    for (const it of visible()) availFts(it).forEach((f) => set.add(f));
+    if (!set.size) for (const r of Object.values(cur().regions)) for (const a of Object.values(r)) a.forEach((f) => set.add(f));
     return [...set].sort((a, b) => a - b);
   }
 
-  // ---------- 保存・復元
-  const save = () => localStorage.setItem(LS_KEY, JSON.stringify({ panels: S.panels, region: S.region, init: S.init, ft: S.ft }));
-  function load() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { return {}; } }
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { t.hidden = true; }, 2200);
+  }
 
-  // ---------- パネル
-  function ensurePanel(chart) {
-    if (els[chart]) return els[chart];
+  const barH = () => (document.body.classList.contains("nobar") ? 0 : $("bar").offsetHeight);
+  function fitBoard() { $("board").style.top = barH() + "px"; }
+
+  // ---------- 保存・復元
+  const save = () => localStorage.setItem(LS_KEY, JSON.stringify(
+    { items: S.items, region: S.region, init: S.init, ft: S.ft, seq: S.seq }));
+  function load() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { return {}; } }
+  const loadPresets = () => { try { return JSON.parse(localStorage.getItem(LS_PRESETS)) || {}; } catch (e) { return {}; } };
+
+  // ---------- パネルの作成・配置
+  function newItem(chart, o) {
+    return Object.assign({ id: "p" + (++S.seq), chart, region: null, primary: true, on: true,
+                           x: 0, y: 0, w: 450, z: ++S.zTop }, o || {});
+  }
+  // 全ての図種に基本パネルが1つあるようにする（上部メニューのON/OFF用）
+  function ensurePrimaries() {
+    for (const c of chartsOf()) {
+      if (!S.items.some((i) => i.primary && i.chart === c)) S.items.push(newItem(c, { on: false }));
+    }
+  }
+  const sortedVisible = () => visible().sort((a, b) =>
+    rank(ORDER, a.chart) - rank(ORDER, b.chart) ||
+    (b.primary - a.primary) ||
+    rank(RORDER, effRegion(a)) - rank(RORDER, effRegion(b)) || a.id.localeCompare(b.id));
+
+  function fillRegionSel(sel) {
+    sel.innerHTML = "";
+    const o0 = document.createElement("option");
+    o0.value = ""; o0.textContent = "全体に合わせる";
+    sel.appendChild(o0);
+    for (const r of regionsOf()) {
+      const o = document.createElement("option");
+      o.value = r; o.textContent = RSHORT[r] || r;
+      sel.appendChild(o);
+    }
+  }
+
+  function ensureEl(it) {
+    if (els[it.id]) return els[it.id];
     const root = document.createElement("div");
     root.className = "panel";
     root.innerHTML =
-      `<div class="title"><span></span><span class="x" title="閉じる">✕</span></div>` +
-      `<div class="body"><img alt=""><div class="nodata" hidden>この時刻の画像なし</div><div class="grip" title="ドラッグで大きさ変更"></div></div>`;
+      `<div class="title"><span class="left"><span class="name"></span><select class="rsel" title="この図の表示範囲"></select></span>` +
+      `<span class="btns"><span class="dup" title="別の表示範囲で複製（広さ違い）">⧉</span><span class="x" title="閉じる">✕</span></span></div>` +
+      `<div class="body"><img alt=""><div class="nodata" hidden>この図・範囲の画像なし</div><div class="grip" title="ドラッグで大きさ変更"></div></div>`;
     $("board").appendChild(root);
     const e = { root, img: root.querySelector("img"), nodata: root.querySelector(".nodata"),
-                title: root.querySelector(".title span"), wantUrl: "" };
-    e.title.textContent = S.m.charts[chart] || chart;
-    els[chart] = e;
-    wirePanel(chart, e);
+                name: root.querySelector(".name"), sel: root.querySelector(".rsel"), wantUrl: "" };
+    fillRegionSel(e.sel);
+    els[it.id] = e;
+    wirePanel(it.id, e);
     return e;
   }
 
-  function applyGeom(chart) {
-    const p = S.panels[chart], e = els[chart];
+  function applyGeom(it) {
+    const e = els[it.id];
     if (!e) return;
-    e.root.style.display = p.on ? "" : "none";
-    e.root.style.left = p.x + "px";
-    e.root.style.top = p.y + "px";
-    e.root.style.width = p.w + "px";
-    e.root.style.zIndex = p.z;
+    e.root.style.display = it.on ? "" : "none";
+    e.root.style.left = it.x + "px";
+    e.root.style.top = it.y + "px";
+    e.root.style.width = it.w + "px";
+    e.root.style.zIndex = it.z;
+    e.root.classList.toggle("variant", !it.primary);
   }
 
-  function activate(chart) {
-    S.active = chart;
-    for (const c in els) els[c].root.classList.toggle("active", c === chart);
-    S.panels[chart].z = ++S.zTop;
-    applyGeom(chart);
+  function activate(id) {
+    S.active = id;
+    for (const k in els) els[k].root.classList.toggle("active", k === id);
+    const it = getItem(id);
+    if (it) { it.z = ++S.zTop; applyGeom(it); }
   }
 
-  function wirePanel(chart, e) {
-    const p = () => S.panels[chart];
-    // 移動（タイトル帯をドラッグ）
+  function wirePanel(id, e) {
+    // 移動（タイトル帯をドラッグ。範囲選択などの操作部品は除く）
     e.root.querySelector(".title").addEventListener("pointerdown", (ev) => {
-      if (ev.target.classList.contains("x")) return;
-      activate(chart);
-      const sx = ev.clientX, sy = ev.clientY, ox = p().x, oy = p().y;
-      const mv = (m) => { p().x = Math.max(0, ox + m.clientX - sx); p().y = Math.max(0, oy + m.clientY - sy); applyGeom(chart); };
+      if (ev.target.closest(".btns") || ev.target.tagName === "SELECT") return;
+      const it = getItem(id); if (!it) return;
+      activate(id);
+      const sx = ev.clientX, sy = ev.clientY, ox = it.x, oy = it.y;
+      const mv = (m) => { it.x = Math.max(0, ox + m.clientX - sx); it.y = Math.max(0, oy + m.clientY - sy); applyGeom(it); };
       const up = () => { removeEventListener("pointermove", mv); removeEventListener("pointerup", up); save(); };
       addEventListener("pointermove", mv); addEventListener("pointerup", up);
       ev.preventDefault();
     });
     // 大きさ変更（右下をドラッグ。縦横比は元画像のまま）
     e.root.querySelector(".grip").addEventListener("pointerdown", (ev) => {
-      activate(chart);
-      const sx = ev.clientX, sy = ev.clientY, ow = p().w;
+      const it = getItem(id); if (!it) return;
+      activate(id);
+      const sx = ev.clientX, sy = ev.clientY, ow = it.w;
       const mv = (m) => {
-        // 横・縦どちらの移動量も使い、大きい方に追従
         const dw = Math.max(m.clientX - sx, (m.clientY - sy) * IMG_W / IMG_H);
-        p().w = Math.min(MAX_W, Math.max(MIN_W, ow + dw));
-        applyGeom(chart);
+        it.w = Math.min(MAX_W, Math.max(MIN_W, ow + dw));
+        applyGeom(it);
       };
       const up = () => { removeEventListener("pointermove", mv); removeEventListener("pointerup", up); save(); };
       addEventListener("pointermove", mv); addEventListener("pointerup", up);
       ev.preventDefault(); ev.stopPropagation();
     });
-    // クリックで前面・ホイールで拡大縮小（カーソル位置を基準にする）
-    e.root.addEventListener("pointerdown", () => activate(chart));
+    e.root.addEventListener("pointerdown", () => activate(id));
+    // ホイールで拡大縮小（カーソル位置を基準にする）
     e.root.addEventListener("wheel", (ev) => {
+      const it = getItem(id); if (!it) return;
       ev.preventDefault();
       const r = e.root.getBoundingClientRect();
       const k = ev.deltaY < 0 ? 1.1 : 1 / 1.1;
-      const nw = Math.min(MAX_W, Math.max(MIN_W, p().w * k));
-      const f = nw / p().w;
-      p().x = Math.max(0, p().x + (ev.clientX - r.left) * (1 - f)); // タイトル帯が画面外に出ないよう0以上
-      p().y = Math.max(0, p().y + (ev.clientY - r.top) * (1 - f));
-      p().w = nw;
-      applyGeom(chart); save();
+      const nw = Math.min(MAX_W, Math.max(MIN_W, it.w * k));
+      const f = nw / it.w;
+      it.x = Math.max(0, it.x + (ev.clientX - r.left) * (1 - f)); // タイトル帯が画面外に出ないよう0以上
+      it.y = Math.max(0, it.y + (ev.clientY - r.top) * (1 - f));
+      it.w = nw;
+      applyGeom(it); save();
     }, { passive: false });
-    e.root.querySelector(".x").onclick = () => { p().on = false; applyGeom(chart); buildToggles(); save(); };
+    // この図の表示範囲
+    e.sel.addEventListener("change", () => {
+      const it = getItem(id); if (!it) return;
+      it.region = e.sel.value || null;
+      renderItem(it); refreshLabel(); save();
+    });
+    e.root.querySelector(".dup").onclick = () => addVariantFor(getItem(id));
+    e.root.querySelector(".x").onclick = () => {
+      const it = getItem(id); if (!it) return;
+      if (it.primary) { it.on = false; applyGeom(it); buildToggles(); }
+      else { removeItem(it); }
+      save();
+    };
+  }
+
+  function removeItem(it) {
+    if (els[it.id]) { els[it.id].root.remove(); delete els[it.id]; }
+    S.items = S.items.filter((i) => i !== it);
+    if (S.active === it.id) S.active = null;
   }
 
   // 画像の差し替え（読み込み完了まで古い画像を残してちらつきを防ぐ）
-  function setImage(chart) {
-    const e = ensurePanel(chart);
-    const reg = cur().regions[S.region] || {};
-    const has = reg[chart] && reg[chart].includes(S.ft);
-    e.nodata.hidden = !!has;
-    if (!has) return;
-    const url = imgUrl(S.init, S.region, chart, S.ft);
+  function renderItem(it) {
+    const e = ensureEl(it);
+    applyGeom(it);
+    e.sel.value = it.region || "";
+    const list = availFts(it);
+    const base = SHORT[it.chart] || it.chart;
+    if (!list.length) { e.nodata.hidden = false; e.name.textContent = base; return; }
+    const ft = pickFt(list, S.ft);
+    e.name.textContent = ft === S.ft ? base : `${base} (FT${ft}h)`;
+    e.nodata.hidden = true;
+    if (!it.on) return;
+    const url = imgUrl(S.init, effRegion(it), it.chart, ft);
     e.wantUrl = url;
     const im = new Image();
     im.onload = () => { if (e.wantUrl === url) e.img.src = url; };
     im.src = url;
   }
 
-  function refresh() {
-    for (const c of charts()) {
-      if (!S.panels[c]) continue;
-      ensurePanel(c);
-      applyGeom(c);
-      if (S.panels[c].on) setImage(c);
-    }
-    for (const c in els) if (!charts().includes(c)) els[c].root.style.display = "none";
+  function refreshLabel() {
     const d = parseInit(S.init);
     $("dateLabel").textContent = `${fmt(d, S.ft, "UTC")} (${fmt(d, S.ft + 9, "JST")}) ｜ 初期値 ${pad(d.getUTCHours())}UTC ＋${S.ft}h`;
+  }
+
+  function refresh() {
+    for (const it of S.items) renderItem(it);
+    refreshLabel();
     prefetch();
     save();
   }
@@ -150,15 +233,18 @@
     const f = fts(), i = f.indexOf(S.ft);
     for (const ft of [f[i + 1], f[i - 1]]) {
       if (ft === undefined) continue;
-      for (const c in S.panels) if (S.panels[c].on) new Image().src = imgUrl(S.init, S.region, c, ft);
+      for (const it of visible()) {
+        const l = availFts(it);
+        if (l.length) new Image().src = imgUrl(S.init, effRegion(it), it.chart, pickFt(l, ft));
+      }
     }
   }
 
   // ---------- 配置
   function tile() {
-    const on = charts().filter((c) => S.panels[c].on);
+    const on = sortedVisible();
     if (!on.length) return;
-    const W = innerWidth, H = innerHeight - (document.body.classList.contains("nobar") ? 0 : 40);
+    const W = innerWidth, H = innerHeight - barH();
     let best = null;
     for (let cols = 1; cols <= on.length; cols++) {
       const rows = Math.ceil(on.length / cols);
@@ -166,35 +252,119 @@
       if (!best || w > best.w) best = { cols, w };
     }
     const w = Math.min(MAX_W, Math.max(MIN_W, Math.floor(best.w)));
-    on.forEach((c, i) => {
-      S.panels[c].w = w;
-      S.panels[c].x = (i % best.cols) * (w + 4) + 2;
-      S.panels[c].y = Math.floor(i / best.cols) * (w * IMG_H / IMG_W + TITLE_H + 4) + 2;
-      S.panels[c].z = ++S.zTop;
-      applyGeom(c);
+    on.forEach((it, i) => {
+      it.w = w;
+      it.x = (i % best.cols) * (w + 4) + 2;
+      it.y = Math.floor(i / best.cols) * (w * IMG_H / IMG_W + TITLE_H + 4) + 2;
+      it.z = ++S.zTop;
+      applyGeom(it);
     });
     save();
   }
 
+  // 初期化: 既定の図（全て全体の表示範囲に揃う）を高層→地上の順で敷き詰める
   function resetLayout() {
-    for (const c of charts()) S.panels[c] = { on: DEFAULT_ON.includes(c), x: 0, y: 0, w: 450, z: 1 };
+    for (const k of Object.keys(els)) { els[k].root.remove(); delete els[k]; }
+    S.items = [];
+    for (const c of chartsOf()) S.items.push(newItem(c, { on: DEFAULT_ON.includes(c) }));
     buildToggles(); refresh(); tile();
+  }
+
+  // ---------- 広さ違い
+  // 1枚の図を、まだ並んでいない別の表示範囲で複製する
+  function addVariantFor(it) {
+    if (!it) return;
+    const shown = new Set(visible().filter((i) => i.chart === it.chart).map(effRegion));
+    const next = regionsOf().find((r) => !shown.has(r) && (cur().regions[r] || {})[it.chart]);
+    if (!next) { toast("この図は、全ての表示範囲で既に並んでいます"); return; }
+    const v = newItem(it.chart, { region: next, primary: false, x: it.x + 30, y: it.y + 30, w: it.w });
+    S.items.push(v);
+    renderItem(v); activate(v.id); save();
+  }
+
+  // 選択中の図を、他の全ての表示範囲でも並べて整列する
+  function addAllVariants() {
+    const it = getItem(S.active) || sortedVisible()[0];
+    if (!it) { toast("先に図を選択（クリック）してください"); return; }
+    const shown = new Set(visible().filter((i) => i.chart === it.chart).map(effRegion));
+    let n = 0;
+    for (const r of regionsOf()) {
+      if (shown.has(r) || !(cur().regions[r] || {})[it.chart]) continue;
+      S.items.push(newItem(it.chart, { region: r, primary: false, w: it.w }));
+      n++;
+    }
+    if (!n) { toast("この図は、全ての表示範囲で既に並んでいます"); return; }
+    refresh(); tile();
+    toast(`${SHORT[it.chart] || it.chart} を ${n} 範囲ぶん追加しました`);
+  }
+
+  // ---------- 登録した配置
+  function buildPresetSel(selected) {
+    const sel = $("presetSel");
+    const p = loadPresets();
+    sel.innerHTML = "";
+    const o0 = document.createElement("option");
+    o0.value = ""; o0.textContent = Object.keys(p).length ? "（選択して呼び出し）" : "（登録なし）";
+    sel.appendChild(o0);
+    for (const name of Object.keys(p)) {
+      const o = document.createElement("option");
+      o.value = name; o.textContent = name;
+      sel.appendChild(o);
+    }
+    sel.value = selected && p[selected] ? selected : "";
+  }
+
+  function savePreset() {
+    const name = $("presetName").value.trim();
+    if (!name) { toast("登録名を入力してください"); return; }
+    const p = loadPresets();
+    const existed = !!p[name];
+    p[name] = { items: JSON.parse(JSON.stringify(S.items)), region: S.region, savedAt: Date.now() };
+    localStorage.setItem(LS_PRESETS, JSON.stringify(p));
+    buildPresetSel(name);
+    toast(existed ? `「${name}」を上書き登録しました` : `「${name}」を登録しました`);
+  }
+
+  function applyPreset(name) {
+    const pr = loadPresets()[name];
+    if (!pr) return;
+    for (const k of Object.keys(els)) { els[k].root.remove(); delete els[k]; }
+    S.items = JSON.parse(JSON.stringify(pr.items));
+    S.seq = Math.max(S.seq, ...S.items.map((i) => +String(i.id).slice(1) || 0));
+    S.zTop = Math.max(1, ...S.items.map((i) => i.z || 1));
+    if (pr.region && regionsOf().includes(pr.region)) { S.region = pr.region; $("regionSel").value = S.region; }
+    ensurePrimaries();
+    fixFt(); buildToggles(); refresh();
+    $("presetName").value = name;
+    toast(`「${name}」を呼び出しました`);
+  }
+
+  function deletePreset() {
+    const name = $("presetSel").value;
+    if (!name) { toast("削除する登録を選択してください"); return; }
+    const p = loadPresets();
+    delete p[name];
+    localStorage.setItem(LS_PRESETS, JSON.stringify(p));
+    buildPresetSel();
+    toast(`「${name}」を削除しました`);
   }
 
   // ---------- UI
   function buildToggles() {
     const box = $("chartToggles");
     box.innerHTML = "";
-    for (const c of charts()) {
+    for (const c of chartsOf()) {
+      const prim = S.items.find((i) => i.primary && i.chart === c);
       const b = document.createElement("button");
       b.textContent = SHORT[c] || (S.m.charts[c] || c);
       b.title = S.m.charts[c] || c;
-      b.className = S.panels[c] && S.panels[c].on ? "on" : "";
+      b.className = prim && prim.on ? "on" : "";
       b.onclick = () => {
-        const p = S.panels[c];
+        let p = S.items.find((i) => i.primary && i.chart === c);
+        if (!p) { p = newItem(c, { on: false }); S.items.push(p); }
         p.on = !p.on;
-        if (p.on) { ensurePanel(c); setImage(c); activate(c); }
-        applyGeom(c); buildToggles(); save();
+        if (p.on) { renderItem(p); activate(p.id); }
+        applyGeom(p); buildToggles(); save();
       };
       box.appendChild(b);
     }
@@ -209,16 +379,22 @@
       si.appendChild(o);
     }
     si.value = S.init;
-    si.onchange = () => { S.init = si.value; fixFt(); refresh(); };
+    si.onchange = () => { S.init = si.value; fixFt(); rebuildRegionSelects(); refresh(); };
+    rebuildRegionSelects();
+  }
+
+  function rebuildRegionSelects() {
     const sr = $("regionSel");
     sr.innerHTML = "";
-    for (const r of Object.keys(cur().regions)) {
+    for (const r of regionsOf()) {
       const o = document.createElement("option");
       o.value = r; o.textContent = S.m.regions[r] || r;
       sr.appendChild(o);
     }
+    if (!regionsOf().includes(S.region)) S.region = regionsOf().includes(REGION_DEFAULT) ? REGION_DEFAULT : regionsOf()[0];
     sr.value = S.region;
     sr.onchange = () => { S.region = sr.value; fixFt(); refresh(); };
+    for (const k in els) { const v = els[k].sel.value; fillRegionSel(els[k].sel); els[k].sel.value = v; }
   }
 
   function fixFt() {
@@ -241,7 +417,7 @@
     S.init = list[j];
     if (keepValid) S.ft = Math.max(0, S.ft - dh);
     $("initSel").value = S.init;
-    fixFt(); refresh();
+    rebuildRegionSelects(); fixFt(); refresh();
   }
   function play() {
     if (S.timer) { stop(); return; }
@@ -254,7 +430,7 @@
   function stop() { if (S.timer) { clearInterval(S.timer); S.timer = null; } $("btnPlay").textContent = "▶"; }
 
   addEventListener("keydown", (e) => {
-    if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+    if (["SELECT", "INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
     const k = e.key;
     if (k === "ArrowUp") { e.ctrlKey ? setFt(Math.max(...fts())) : stepFt(+1); }
     else if (k === "ArrowDown") { e.ctrlKey ? setFt(Math.min(...fts())) : stepFt(-1); }
@@ -264,19 +440,26 @@
     else if (k === "s" || k === "S") stop();
     else if (k === "t" || k === "T") tile();
     else if (k === "i" || k === "I") resetLayout();
-    else if (k === "d" || k === "D") { $("bar").classList.toggle("hide"); document.body.classList.toggle("nobar"); }
+    else if (k === "d" || k === "D") { document.body.classList.toggle("nobar"); fitBoard(); }
     else if (k === "h" || k === "H") $("help").hidden = !$("help").hidden;
-    else if (k === "b" || k === "B") { if (S.active) { S.panels[S.active].z = 0; applyGeom(S.active); } }
+    else if (k === "b" || k === "B") { const it = getItem(S.active); if (it) { it.z = 0; applyGeom(it); } }
     else return;
     e.preventDefault();
     if (k.startsWith("Arrow")) stop(); // 矢印キーで再生停止（元アプリと同様）
   });
 
   $("btnTile").onclick = tile;
+  $("btnVariants").onclick = addAllVariants;
   $("btnPlay").onclick = play;
   $("btnReset").onclick = resetLayout;
   $("btnHelp").onclick = () => { $("help").hidden = !$("help").hidden; };
   $("btnHelpClose").onclick = () => { $("help").hidden = true; };
+  $("btnPresetSave").onclick = savePreset;
+  $("btnPresetDel").onclick = deletePreset;
+  $("presetSel").onchange = () => { if ($("presetSel").value) applyPreset($("presetSel").value); };
+  $("presetName").addEventListener("keydown", (e) => { if (e.key === "Enter") savePreset(); });
+  addEventListener("resize", fitBoard);
+  new ResizeObserver(fitBoard).observe($("bar")); // 折り返しでメニューの高さが変わっても画用紙の開始位置を合わせる
 
   // ---------- 起動
   async function boot() {
@@ -285,19 +468,22 @@
     if (!S.m.inits.length) { $("dateLabel").textContent = "天気図がありません（make_charts.py を実行）"; return; }
     const sv = load();
     S.init = S.m.inits.some((i) => i.init === sv.init) ? sv.init : S.m.inits[0].init;
-    const regs = Object.keys(cur().regions);
+    const regs = regionsOf();
     S.region = regs.includes(sv.region) ? sv.region : (regs.includes(REGION_DEFAULT) ? REGION_DEFAULT : regs[0]);
     S.ft = sv.ft || 0;
-    const all = new Set(S.m.inits.flatMap((i) => Object.values(i.regions).flatMap((r) => Object.keys(r))));
-    let fresh = !sv.panels;
-    for (const c of all) S.panels[c] = (sv.panels && sv.panels[c]) || { on: false, x: 0, y: 0, w: 450, z: 1 };
-    if (fresh) for (const c of DEFAULT_ON) if (S.panels[c]) S.panels[c].on = true;
-    S.zTop = Math.max(1, ...Object.values(S.panels).map((p) => p.z || 1));
+    S.seq = sv.seq || 0;
+    const fresh = !Array.isArray(sv.items) || !sv.items.length;
+    S.items = fresh ? [] : sv.items;
+    S.zTop = Math.max(1, ...S.items.map((i) => i.z || 1));
+    if (fresh) for (const c of chartsOf()) S.items.push(newItem(c, { on: DEFAULT_ON.includes(c) }));
+    ensurePrimaries();
     fixFt();
-    buildSelects(); buildToggles();
+    buildSelects(); buildToggles(); buildPresetSel();
+    fitBoard();
     refresh();
     if (fresh) tile();
   }
+
   // ---------- 最新データの取得（サーバーの /api/update を呼ぶ）
   async function reloadManifest() {
     if (!S.m) { location.reload(); return; }
@@ -307,10 +493,7 @@
     const isNew = !S.m.inits.some((i) => i.init === newest);
     S.m = m;
     if (isNew || !m.inits.some((i) => i.init === S.init)) S.init = newest; // 新しい初期値が増えたら切り替える
-    if (!cur().regions[S.region]) S.region = Object.keys(cur().regions)[0];
-    for (const c of Object.keys(cur().regions[S.region])) {          // 新しい図種があればパネル定義を追加
-      if (!S.panels[c]) S.panels[c] = { on: false, x: 0, y: 0, w: 450, z: 1 };
-    }
+    ensurePrimaries();
     fixFt(); buildSelects(); buildToggles(); refresh();
   }
 
