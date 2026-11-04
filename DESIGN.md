@@ -29,6 +29,14 @@ RISH(GRIB2) → gsm_data.py → gsm_charts.py → output/*.png + manifest.json �
 | 画面いっぱいの地図のため投影座標で範囲指定 | `set_extent`（緯度経度）だと余白が出る |
 | 凡例ハッチ色は edgecolor を使う | Rectangle は rc の hatch.color を見ない |
 
+## 画用紙版（web/board/）の設計
+
+- 通常版と別ページ・別ファイル（`web/board/`）。manifest と画像規則だけを共有し、JSは共有しない。
+- 各図は絶対配置のパネル（位置x,y・幅w・z）。高さは縦横比（950:760）から決まる。状態は localStorage に保存。
+- 時間操作は webTGVmonitor に合わせる（↑↓=予報時間、←→=初期時刻、Ctrl+←→=有効時刻固定）。
+- 画像差し替えは `new Image()` で読み込み完了後に `src` を替え、ちらつきを防ぐ。前後FTは先読み。
+- 未実装: 手描き（元アプリの描画機能）、全FT自動読込（Cキー）。
+
 ## 既知の制約
 
 - 画像は 950×760 固定。スマホでは縮小表示になる。

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GSM天気図ボード（画用紙版）</title>
+<link rel="stylesheet" href="board.css">
+</head>
+<body>
+<div id="bar">
+  <span id="dateLabel">読み込み中…</span>
+  <label>初期値 <select id="initSel"></select></label>
+  <label>地域 <select id="regionSel"></select></label>
+  <span id="chartToggles" role="group" aria-label="表示する図"></span>
+  <button id="btnTile" title="表示中の図を画面に敷き詰める (T)">整列</button>
+  <button id="btnPlay" title="再生/停止 (P / S)">▶</button>
+  <button id="btnReset" title="配置を初期化 (I)">初期化</button>
+  <button id="btnHelp" title="操作説明 (H)">使い方</button>
+  <a href="/" title="通常版ビューア">通常版</a>
+</div>
+
+<div id="board"></div>
+
+<div id="help" hidden>
+  <h2>操作方法</h2>
+  <table>
+    <tr><th>↑ / ↓</th><td>予報時間 +6h / −6h（Ctrl+↓: 0h、Ctrl+↑: 最大）</td></tr>
+    <tr><th>← / →</th><td>初期時刻を 前 / 次（Ctrl+←→: 予報有効時刻を固定して初期値を変える）</td></tr>
+    <tr><th>マウスホイール</th><td>図の上で拡大縮小（0.25〜2倍）</td></tr>
+    <tr><th>タイトル部ドラッグ</th><td>図を移動（クリックで最前面）</td></tr>
+    <tr><th>右下の▨ドラッグ</th><td>図の大きさを変更</td></tr>
+    <tr><th>B</th><td>選択中（最後に触った）の図を最背面へ</td></tr>
+    <tr><th>P / S</th><td>再生 / 停止</td></tr>
+    <tr><th>T / I</th><td>整列 / 配置の初期化</td></tr>
+    <tr><th>D</th><td>上部バーの表示・非表示</td></tr>
+    <tr><th>H</th><td>この説明の表示・非表示</td></tr>
+  </table>
+  <p>配置・大きさ・表示する図は自動保存されます。</p>
+  <button id="btnHelpClose">閉じる</button>
+</div>
+<script src="board.js"></script>
+</body>
+</html>

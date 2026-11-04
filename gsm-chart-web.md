@@ -52,6 +52,26 @@ python make_charts.py ?                                     # ヘルプ
 
 ブラウザ操作: ←→ 予報時間 / ↑↓ 図種 / Space 再生 / Home・End 最初・最後。URL の `#init=..&region=..&chart=..&ft=..` を保存すれば同じ画面を再現できる。
 
+## 画用紙版（複数の図を並べて表示）: `http://127.0.0.1:8780/board/`
+
+webTGVmonitor の操作感に合わせた別ページ（通常版とは独立。通常版ヘッダーの「画用紙版」リンクからも開ける）。
+各高度の図を画用紙（画面）に並べ、マウスで位置・大きさを調整し、キーボードで時間を前後させる。
+
+| 操作 | 内容 |
+|---|---|
+| ↑ / ↓ | 予報時間 +6h / −6h（Ctrl+↓: 0h、Ctrl+↑: 最大） |
+| ← / → | 初期時刻を 前 / 次（Ctrl+←→: 予報有効時刻を固定して初期値を変える） |
+| マウスホイール | 図の上で拡大縮小（0.25〜2倍、カーソル位置を基準） |
+| タイトル帯ドラッグ | 図を移動（クリックで最前面） |
+| 右下▨ドラッグ | 図の大きさを変更（縦横比固定） |
+| B | 最後に触った図を最背面へ |
+| P / S | 再生 / 停止（矢印キーでも停止） |
+| T / I | 整列 / 配置の初期化 |
+| D / H | 上部バーの表示切替 / 使い方 |
+
+表示する図の ON/OFF は上部バーのボタン、地域・初期値はセレクトで切り替える。配置・大きさ・表示図はブラウザの localStorage に自動保存（`gsmBoard.v1`）。
+実装は `web/board/`（`index.html` / `board.css` / `board.js`）。画像規則・manifest は通常版と共通。
+
 ## ファイル構成
 
 | パス | 役割 |
@@ -60,7 +80,8 @@ python make_charts.py ?                                     # ヘルプ
 | `gsm_charts.py` | 図の描画（地域・図種の定義、見出し・凡例・枠） |
 | `make_charts.py` | CLI。取得 → FT単位で並列描画 → `output/manifest.json` 更新 |
 | `server.py` | 標準ライブラリの静的サーバー（`/`=web/、`/output/`=output/） |
-| `web/` | `index.html` / `style.css` / `app.js`（Vanilla JS、フレームワーク不使用） |
+| `web/` | 通常版 `index.html` / `style.css` / `app.js`（Vanilla JS、フレームワーク不使用） |
+| `web/board/` | 画用紙版 `index.html` / `board.css` / `board.js` |
 | `data/gsm/` | GRIB2（git除外） |
 | `output/{初期値}/{地域}/{図種}_{FT3桁}.png` | 作成画像（git除外）。`output/manifest.json` が一覧 |
 

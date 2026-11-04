@@ -6,6 +6,7 @@ h1 { font-size:18px; margin:0 8px 0 0; }
 select, button, a#dlLink { font:inherit; padding:4px 10px; border:1px solid var(--line); border-radius:6px; background:#fff; color:inherit; cursor:pointer; }
 button:hover, a#dlLink:hover { border-color:var(--accent); }
 a#dlLink { text-decoration:none; }
+header a { color:var(--accent); }
 #updated { margin-left:auto; color:#667; font-size:12px; }
 .seg { display:inline-flex; }
 .seg button { border-radius:0; margin-left:-1px; }

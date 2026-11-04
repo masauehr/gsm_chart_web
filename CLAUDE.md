@@ -18,3 +18,6 @@
 - 降水(APCP)は `name` が `unknown`。パラメータ番号で識別する。
 - `#noData` のような `hidden` 属性は CSS の `display` に負ける。`[hidden]{display:none}` を併記する。
 - ポート 8765 は他アプリが使用中のことがある。
+
+## 画用紙版
+`web/board/`（http://127.0.0.1:8780/board/）。通常版 `web/app.js` とは独立。操作は gsm-chart-web.md の表を参照。
