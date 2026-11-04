@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- GSM天気図の自動更新: 1時間おきに auto_update.py を実行（未完了ならすぐ終了するので軽い） -->
+  <key>Label</key><string>com.masahiro.gsm_chart_web</string>
+  <key>ProgramArguments</key>
+  <array>
+    <!-- brew更新でpython3が切り替わる事故を避けるため、condaのPythonを絶対パスで指定 -->
+    <string>/opt/anaconda3/envs/met_env_310/bin/python</string>
+    <string>/Users/masahiro/projects/gsm_chart_web/auto_update.py</string>
+    <string>--keep</string><string>4</string>
+    <string>--jobs</string><string>3</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/masahiro/projects/gsm_chart_web</string>
+  <key>StartInterval</key><integer>3600</integer>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/masahiro/projects/gsm_chart_web/logs/auto_update.log</string>
+  <key>StandardErrorPath</key><string>/Users/masahiro/projects/gsm_chart_web/logs/auto_update.log</string>
+</dict>
+</plist>

@@ -6,7 +6,10 @@
   const IMG_W = 950, IMG_H = 760, TITLE_H = 22;           // 元画像のサイズと見出し帯の高さ
   const MIN_W = IMG_W * 0.25, MAX_W = IMG_W * 2;          // 0.25〜2倍（元アプリと同じ）
   // 並び順（地上→低層→高層）。未知の図は末尾
-  const ORDER = ["surf", "t925", "t850", "ept850", "t700", "z500", "jet300"];
+  const ORDER = ["surf", "tenki", "t975", "t925", "t850", "ept850", "t700", "t500", "z500", "jet300"];
+  // 上部バーのボタン用の短い名前（重複しないように）
+  const SHORT = { surf: "地上降水", tenki: "天気", t975: "975", t925: "925", t850: "850", ept850: "850EPT",
+                  t700: "700", t500: "500気温", z500: "500高度", jet300: "300" };
   const REGION_DEFAULT = "japan";
   const DEFAULT_ON = ["surf", "t925", "t850", "t700", "z500", "jet300"];
   const LS_KEY = "gsmBoard.v1";
@@ -184,7 +187,7 @@
     box.innerHTML = "";
     for (const c of charts()) {
       const b = document.createElement("button");
-      b.textContent = (S.m.charts[c] || c).split("（")[0];
+      b.textContent = SHORT[c] || (S.m.charts[c] || c);
       b.title = S.m.charts[c] || c;
       b.className = S.panels[c] && S.panels[c].on ? "on" : "";
       b.onclick = () => {
@@ -295,5 +298,44 @@
     refresh();
     if (fresh) tile();
   }
-  boot();
+  // ---------- 最新データの取得（サーバーの /api/update を呼ぶ）
+  async function reloadManifest() {
+    if (!S.m) { location.reload(); return; }
+    const m = await (await fetch("/output/manifest.json", { cache: "no-store" })).json();
+    if (!m.inits.length) return;
+    const newest = m.inits[0].init;
+    const isNew = !S.m.inits.some((i) => i.init === newest);
+    S.m = m;
+    if (isNew || !m.inits.some((i) => i.init === S.init)) S.init = newest; // 新しい初期値が増えたら切り替える
+    if (!cur().regions[S.region]) S.region = Object.keys(cur().regions)[0];
+    for (const c of Object.keys(cur().regions[S.region])) {          // 新しい図種があればパネル定義を追加
+      if (!S.panels[c]) S.panels[c] = { on: false, x: 0, y: 0, w: 450, z: 1 };
+    }
+    fixFt(); buildSelects(); buildToggles(); refresh();
+  }
+
+  async function pollUpdate() {
+    let j;
+    try { j = await (await fetch("/api/status")).json(); } catch (e) { $("updateMsg").textContent = "状態を取得できません"; return; }
+    const last = (j.log && j.log.length) ? j.log[j.log.length - 1] : "";
+    if (j.running) {
+      $("btnUpdate").disabled = true;
+      $("updateMsg").textContent = "更新中… " + last;
+      setTimeout(pollUpdate, 3000);
+    } else {
+      $("btnUpdate").disabled = false;
+      if (j.rc === null || j.rc === undefined) { $("updateMsg").textContent = ""; return; }
+      $("updateMsg").textContent = j.rc === 0 ? "更新完了" : "更新に失敗（logs/update_ui.log）";
+      if (j.rc === 0) reloadManifest();
+    }
+  }
+
+  $("btnUpdate").onclick = async () => {
+    $("btnUpdate").disabled = true;
+    $("updateMsg").textContent = "更新を開始しています…";
+    try { await fetch("/api/update", { method: "POST" }); } catch (e) { $("updateMsg").textContent = "開始できません"; $("btnUpdate").disabled = false; return; }
+    pollUpdate();
+  };
+
+  boot().then(pollUpdate);
 })();

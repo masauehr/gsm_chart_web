@@ -201,5 +201,41 @@
     e.preventDefault();
   });
 
-  boot();
+  // ---------- 最新データの取得（サーバーの /api/update を呼ぶ）
+  async function reloadManifest() {
+    const m = await (await fetch("/output/manifest.json", { cache: "no-store" })).json();
+    if (!m.inits.length) return;
+    const newest = m.inits[0].init;
+    const isNew = S.manifest && !S.manifest.inits.some((i) => i.init === newest);
+    S.manifest = m;
+    if (isNew || !m.inits.some((i) => i.init === S.init)) S.init = newest; // 新しい初期値が増えたら切り替える
+    keepValid();
+    buildInitSel(); buildRegionBtns(); buildTabs(); update();
+    $("updated").textContent = "マニフェスト更新: " + new Date(m.updated).toLocaleString("ja-JP");
+  }
+
+  async function pollUpdate() {
+    let j;
+    try { j = await (await fetch("/api/status")).json(); } catch (e) { $("updateMsg").textContent = "状態を取得できません"; return; }
+    const last = (j.log && j.log.length) ? j.log[j.log.length - 1] : "";
+    if (j.running) {
+      $("btnUpdate").disabled = true;
+      $("updateMsg").textContent = "更新中… " + last;
+      setTimeout(pollUpdate, 3000);
+    } else {
+      $("btnUpdate").disabled = false;
+      if (j.rc === null || j.rc === undefined) { $("updateMsg").textContent = ""; return; }
+      $("updateMsg").textContent = j.rc === 0 ? "更新完了: " + last : "更新に失敗しました（logs/update_ui.log を確認）";
+      if (j.rc === 0) reloadManifest();
+    }
+  }
+
+  $("btnUpdate").onclick = async () => {
+    $("btnUpdate").disabled = true;
+    $("updateMsg").textContent = "更新を開始しています…";
+    try { await fetch("/api/update", { method: "POST" }); } catch (e) { $("updateMsg").textContent = "開始できません"; $("btnUpdate").disabled = false; return; }
+    pollUpdate();
+  };
+
+  boot().then(pollUpdate); // 画面を開いた時に更新中なら進捗表示を再開
 })();

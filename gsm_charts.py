@@ -4,7 +4,7 @@
 
 参考: tenkizu の GSM_*.py（黒良さんのNote由来）と、webTGVmonitor のサンプル画像。
 図種: surf / z500 / jet300 / t850 / t700 / t925 / ept850
-地域: japan（日本周辺・ランベルト） / okinawa（沖縄周辺・正距円筒） / asia（東アジア広域）
+地域: japan / okinawa / asia（Rgl 全球0.5°・6時間毎）、japan3 / okinawa3（Rjp 日本域0.125°・3時間毎）
 """
 import os
 import sys
@@ -42,6 +42,11 @@ REGIONS = {
                   bbox=(95, 180, 5, 68), barb_n=20, coast="10m", zoom=3),
     "okinawa": dict(label="沖縄周辺", kind="pc", center=(128.0, 27.0), width_deg=24.0,
                     bbox=(105, 152, 8, 46), barb_n=16, coast="10m", zoom=4),
+    # 日本域 0.125°（Rjp, 3時間毎）。データ範囲は 120-150E, 20-50N
+    "japan3": dict(label="日本域（0.125°・3時間毎）", kind="lcc", center=(135.0, 36.0), width_km=2700,
+                   bbox=(120, 150, 20, 50), barb_n=20, coast="10m", zoom=1, src="rjp"),
+    "okinawa3": dict(label="南西域（0.125°・3時間毎）", kind="pc", center=(133.0, 30.0), width_deg=26.0,
+                     bbox=(120, 150, 20, 50), barb_n=16, coast="10m", zoom=1, src="rjp"),
     "asia": dict(label="東アジア広域", kind="lcc", center=(115.0, 33.0), width_km=8600,
                  bbox=(55, 180, -8, 80), barb_n=24, coast="50m", zoom=2),
 }
@@ -85,6 +90,7 @@ class View:
         fy = np.linspace(self.lats[0], self.lats[-1], nfy)
         self.flon, self.flat = np.meshgrid(fx, fy)
         self.rlon, self.rlat = np.meshgrid(self.lons, self.lats)
+        self.dx = float(self.lons[1] - self.lons[0])  # 元格子の間隔[度]（0.5 or 0.125）
         self.rmask = self.fmask = None  # 地面下マスク（set_level で設定）
 
     def set_level(self, F, level):
@@ -126,35 +132,33 @@ def vorticity(u, v, lats, lons):
     return (dvdx - ducos) * 1e6
 
 
-def _theta_w_to_t500():
-    """湿潤断熱線（θw）上の 500hPa 気温[K] を引く対応表。SSI 計算用。"""
+_THW_TABLES = {}
+
+
+def _theta_w_to_tup(level_up):
+    """湿潤断熱線（θw）上の level_up[hPa] の気温[K]を引く対応表（SSI用）。level_up ごとに一度だけ作る。"""
+    if level_up not in _THW_TABLES:
+        import metpy.calc as mpcalc
+        from metpy.units import units
+        thw = np.arange(240.0, 321.0, 1.0)
+        tup = []
+        for t in thw:
+            r = mpcalc.moist_lapse(np.array([1000.0, float(level_up)]) * units.hPa, t * units.K)
+            tup.append(float(r[-1].to("K").m))
+        _THW_TABLES[level_up] = (thw, np.array(tup))
+    return _THW_TABLES[level_up]
+
+
+def ssi(F, lv_low=850, lv_up=500):
+    """ショワルター安定指数 SSI = T(lv_up) − lv_low から持ち上げた気塊の気温。負で不安定。"""
     import metpy.calc as mpcalc
     from metpy.units import units
-    thw = np.arange(240.0, 321.0, 1.0)
-    t500 = []
-    for t in thw:
-        r = mpcalc.moist_lapse(np.array([1000.0, 500.0]) * units.hPa, t * units.K)
-        t500.append(float(r[-1].to("K").m))
-    return thw, np.array(t500)
-
-
-_THW_TABLE = None
-
-
-def ssi(F, lv_low=850):
-    """ショワルター安定指数 SSI = T500 − 持ち上げ後の気温（lv_low から 500hPa へ）。負で不安定。"""
-    global _THW_TABLE
-    import metpy.calc as mpcalc
-    from metpy.units import units
-    if _THW_TABLE is None:
-        _THW_TABLE = _theta_w_to_t500()
     d = F["p"][lv_low]
-    td = dewpoint(d["t"], d["r"])
-    td = np.minimum(td, d["t"])
+    td = np.minimum(dewpoint(d["t"], d["r"]), d["t"])
     thw = mpcalc.wet_bulb_potential_temperature(
         lv_low * units.hPa, d["t"] * units.degC, td * units.degC).to("K").m
-    tp500 = np.interp(thw, *_THW_TABLE)
-    return (F["p"][500]["t"] + 273.15) - tp500
+    tp_up = np.interp(thw, *_theta_w_to_tup(lv_up))
+    return (F["p"][lv_up]["t"] + 273.15) - tp_up
 
 
 def ept(F, lv=850):
@@ -216,12 +220,18 @@ def barbs(ax, V, u, v, color, lw=0.7, length=5.2):
 
 
 def extrema(ax, V, a, kind, win, color="k", fs=11, dec=0):
-    """高気圧(H)・低気圧(L)のスタンプ。近接する重複は強い方だけ残す。"""
+    """高気圧(H)・低気圧(L)のスタンプ。近接する重複は強い方だけ残す。
+    win は 0.5°格子での格子点数。格子間隔が違えば度数が同じになるよう換算する。"""
+    win = max(3, int(round(win * 0.5 / V.dx)))
     z = V.raw(a)
+    if V.dx < 0.4:  # 細かい格子では小さな凹凸が極値になるため、3度程度に平滑化してから探す
+        from scipy.ndimage import uniform_filter
+        z = uniform_filter(z, size=max(3, int(round(1.5 / V.dx))), mode="nearest")
     filt = maximum_filter if kind == "H" else minimum_filter
     ys, xs = np.where(filt(z, size=win, mode="nearest") == z)
+    mg = max(3, int(round(1.5 / V.dx)))  # 切り出し端から1.5度は除く
     cand = sorted(((z[j, i], i, j) for j, i in zip(ys, xs)
-                   if 3 < i < len(V.lons) - 4 and 3 < j < len(V.lats) - 4),
+                   if mg < i < len(V.lons) - mg - 1 and mg < j < len(V.lats) - mg - 1),
                   reverse=(kind == "H"))
     ex = ax.get_extent()
     mx = (ex[1] - ex[0]) * 0.02  # 画面端から2%は除外
@@ -241,7 +251,7 @@ def extrema(ax, V, a, kind, win, color="k", fs=11, dec=0):
                 fontsize=fs - 3, color=color, zorder=8)
 
 
-def legend_box(ax, boxes, labels, title=None):
+def legend_box(ax, boxes, labels, center=False):
     """右下の凡例。boxes=[(facecolor, hatch, hatchcolor)...]、labels は境界値の文字列（len(boxes)+1）。"""
     ia = ax.inset_axes([0.724, 0.008, 0.272, 0.078], transform=ax.transAxes, zorder=20)
     ia.set_xlim(0, 1)
@@ -261,22 +271,23 @@ def legend_box(ax, boxes, labels, title=None):
         ia.add_patch(plt.Rectangle((x0 + k * w, 0.52), w, 0.36, fill=False,
                                    edgecolor="k", linewidth=0.6))
     for k, lab in enumerate(labels):
-        ia.text(x0 + k * w, 0.30, lab, ha="center", va="center", fontsize=7)
+        # center=True: 各ボックスの中央に区分名を書く（日本語は和文フォントへフォールバック）
+        ia.text(x0 + (k + 0.5 if center else k) * w, 0.30, lab, ha="center", va="center", fontsize=7,
+                family=["Hiragino Sans", "Arial Unicode MS", "DejaVu Sans"])
 
 
 # ---------------------------------------------------------------- 各図の描画
 def chart_surf(ax, V, F, ctx):
     P = F["msl"]
+    V.set_level(F, None)
     boxes = labels = None
-    tp, tp_prev, ft = F["tp"], ctx.get("tp_prev"), ctx["ft"]
-    if tp is not None and ft >= 6 and (tp_prev is not None or ft == 6):
-        rr = (tp - (tp_prev if tp_prev is not None else 0.0)) / 6.0  # 直前6時間の平均 mm/h
+    rr = F.get("rr")
+    if rr is not None:
         cols = ["#c4ecff", "#9be89b", "#3fc43f", "#ffe84a", "#ff9f1c", "#ff2a1a"]
-        lv = [0.1, 1, 2, 5, 10, 20, 50]
-        fill(ax, V, np.maximum(rr, 0), lv, cols, extend="max")
+        fill(ax, V, rr, [0.1, 1, 2, 5, 10, 20, 50], cols, extend="max")
         boxes = [(c, None, None) for c in cols]
         labels = ["0.1", "1", "2", "5", "10", "20", "50"]
-        ctx["title"] = "RR6h,PseaSURF,WindSURF"
+        ctx["title"] = ("RR1" if F["rr_h"] == 1 else "RR6h") + ",PseaSURF,WindSURF"
     else:
         ctx["title"] = "PseaSURF,WindSURF"
     lines(ax, V, P, np.arange(900, 1060, 4), major=list(range(900, 1060, 20)),
@@ -286,6 +297,33 @@ def chart_surf(ax, V, F, ctx):
     barbs(ax, V, F["u10"], F["v10"], "red")
     if boxes:
         legend_box(ax, boxes, labels)
+
+
+def chart_tenki(ax, V, F, ctx):
+    """天気（雲量・降水の色分け）＋ 海面気圧 ＋ SSI(700-850) ＋ 地上風"""
+    V.set_level(F, None)
+    # 全雲量: 晴(白) / 薄曇(淡黄) / 曇(灰)。降水があれば緑
+    fill(ax, V, F["tcc"], [-1, 30, 70, 101], ["#ffffff", "#fff3b0", "#d9d9d9"])
+    ax.contour(V.flon, V.flat, V.fine(F["tcc"]), levels=[30, 70], colors="#e0a030",
+               linewidths=0.6, transform=PC, zorder=2)
+    if F.get("rr") is not None:
+        thr = 0.5 if F["rr_h"] == 1 else 0.2   # 1時間降水0.5mm / 6時間平均0.2mm/h 以上を雨とみなす
+        ax.contourf(V.flon, V.flat, V.fine(F["rr"]), levels=[thr, 1e4], colors=["#22cc22"],
+                    transform=PC, zorder=2)
+    RD = "#e03030"
+    if 850 in F["p"] and 700 in F["p"]:
+        s = ssi(F, 850, 700)
+        hatch(ax, V, s, [-100, 0], ["oo"], RD)
+        ax.contour(V.flon, V.flat, V.fine(s), levels=[-3, 0], colors=RD, linewidths=0.7,
+                   linestyles="--", transform=PC, zorder=3)
+    lines(ax, V, F["msl"], np.arange(900, 1060, 4), major=list(range(900, 1060, 20)), fmt="%d", fs=8)
+    extrema(ax, V, F["msl"], "H", 13, color="#1030c0")
+    extrema(ax, V, F["msl"], "L", 13, color="#c01010")
+    barbs(ax, V, F["u10"], F["v10"], "red")
+    ctx["title"] = "TENKI,PseaSURF,SSI(700-850),WindSURF"
+    legend_box(ax, [("#ffffff", None, None), ("#fff3b0", None, None), ("#d9d9d9", None, None),
+                    ("#22cc22", None, None), ("white", "oo", RD)],
+               ["晴", "薄曇", "曇", "雨", "不安定"], center=True)
 
 
 def chart_z500(ax, V, F, ctx):
@@ -350,6 +388,14 @@ def chart_t925(ax, V, F, ctx):
     _chart_tdep(ax, V, F, ctx, 925)
 
 
+def chart_t975(ax, V, F, ctx):
+    _chart_tdep(ax, V, F, ctx, 975)
+
+
+def chart_t500(ax, V, F, ctx):
+    _chart_tdep(ax, V, F, ctx, 500)
+
+
 def chart_t700(ax, V, F, ctx):
     d = F["p"][700]
     V.set_level(F, 700)
@@ -384,12 +430,15 @@ def chart_ept850(ax, V, F, ctx):
 
 
 CHARTS = {
-    "surf": dict(label="地上（気圧・風・降水）", fn=chart_surf, needs_tp=True),
+    "surf": dict(label="地上（気圧・風・降水）", fn=chart_surf),
+    "tenki": dict(label="地上（天気・気圧・SSI）", fn=chart_tenki),
     "z500": dict(label="500hPa（高度・渦度）", fn=chart_z500),
+    "t500": dict(label="500hPa（気温・湿数・風）", fn=chart_t500),
     "jet300": dict(label="300hPa（ジェット・気温・風）", fn=chart_jet300),
     "t850": dict(label="850hPa（気温・湿数・風）", fn=chart_t850),
     "t700": dict(label="700hPa（上昇流・気温・湿数）", fn=chart_t700),
     "t925": dict(label="925hPa（気温・湿数・風）", fn=chart_t925),
+    "t975": dict(label="975hPa（気温・湿数・風）", fn=chart_t975, levels=[975]),
     "ept850": dict(label="850hPa（EPT・SSI・風）", fn=chart_ept850),
 }
 
@@ -437,7 +486,7 @@ def _caption(fig, parts, y):
         x += bb.width / (FIG_W * DPI) + 8 / (FIG_W * DPI)
 
 
-def render_chart(chart, region, F, init, ft, outpath, tp_prev=None):
+def render_chart(chart, region, F, init, ft, outpath):
     """1枚描画して outpath に保存する。init は UTC の datetime。"""
     proj, extent = make_projection(region)
     V = View(F, region)
@@ -455,7 +504,7 @@ def render_chart(chart, region, F, init, ft, outpath, tp_prev=None):
         s.set_edgecolor("#1010e0")
         s.set_linewidth(2.5)
 
-    ctx = dict(ft=ft, tp_prev=tp_prev, title=chart)
+    ctx = dict(ft=ft, title=chart)
     CHARTS[chart]["fn"](ax, V, F, ctx)
 
     valid = init + timedelta(hours=ft)

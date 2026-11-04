@@ -14,6 +14,8 @@
   <span id="chartToggles" role="group" aria-label="表示する図"></span>
   <button id="btnTile" title="表示中の図を画面に敷き詰める (T)">整列</button>
   <button id="btnPlay" title="再生/停止 (P / S)">▶</button>
+  <button id="btnUpdate" title="RISHから最新データを取得して作図します">最新を取得</button>
+  <span id="updateMsg"></span>
   <button id="btnReset" title="配置を初期化 (I)">初期化</button>
   <button id="btnHelp" title="操作説明 (H)">使い方</button>
   <a href="/" title="通常版ビューア">通常版</a>
@@ -24,7 +26,7 @@
 <div id="help" hidden>
   <h2>操作方法</h2>
   <table>
-    <tr><th>↑ / ↓</th><td>予報時間 +6h / −6h（Ctrl+↓: 0h、Ctrl+↑: 最大）</td></tr>
+    <tr><th>↑ / ↓</th><td>予報時間 +1ステップ / −1ステップ（3または6時間）（Ctrl+↓: 0h、Ctrl+↑: 最大）</td></tr>
     <tr><th>← / →</th><td>初期時刻を 前 / 次（Ctrl+←→: 予報有効時刻を固定して初期値を変える）</td></tr>
     <tr><th>マウスホイール</th><td>図の上で拡大縮小（0.25〜2倍）</td></tr>
     <tr><th>タイトル部ドラッグ</th><td>図を移動（クリックで最前面）</td></tr>
