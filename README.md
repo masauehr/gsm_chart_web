@@ -12,14 +12,51 @@
 
 気象庁全球モデル（GSM）の GRIB2（京都大学 RISH 配信）から、気象庁内部ビューア風の天気図を作成し、ブラウザで閲覧するアプリ。
 
-## クイックスタート
+## ローカルでの起動方法
 
+### 前提
+- Python は conda 環境 `met_env_310`（pygrib・cartopy・metpy・scipy・requests が入っている環境）を使います。
+- **`python3` と打つと別の環境（`~/projects/.venv`）になることがあり、その場合は `ModuleNotFoundError` になります。** 下の例のように `/opt/anaconda3/envs/met_env_310/bin/python` を直接指定するのが確実です（`conda activate met_env_310` した後の `python` でも同じです）。
+
+### 手順（初回）
 ```bash
 cd ~/projects/gsm_chart_web
-conda activate met_env_310
-python make_charts.py --latest      # 最新初期値を取得して作図（FT0〜72h）
-python server.py                    # → http://127.0.0.1:8780/
+
+# 1) 天気図を作る（初回だけ必要。最新の初期値を京大RISHから取得して作図。FT0〜72hで数百MB・10分前後）
+/opt/anaconda3/envs/met_env_310/bin/python make_charts.py --latest
+
+# 2) サーバーを起動する（このターミナルは起動したままにする。止めるときは Ctrl+C）
+/opt/anaconda3/envs/met_env_310/bin/python server.py
+
+# 3) ブラウザで開く
+#    通常版   : http://127.0.0.1:8780/
+#    画用紙版 : http://127.0.0.1:8780/board/
 ```
+
+### 2回目以降（作成済みの画像を見るだけ）
+手順の 2) と 3) だけです。**表示するだけならダウンロードは発生しません**（作成済みの画像を読むだけ）。
+
+### 最新データに更新する
+- 画面ヘッダーの **「最新を取得」** ボタン（サーバーが裏で取得・作図し、完了すると自動で切り替わります）。
+- またはコマンド: `python make_charts.py --latest`（取得済みのファイルは再取得しません）。
+
+### バックグラウンドで起動・停止する場合
+```bash
+nohup /opt/anaconda3/envs/met_env_310/bin/python server.py > /tmp/gsm_server.log 2>&1 &   # 起動
+kill $(lsof -ti :8780)                                                                      # 停止
+```
+
+### うまくいかないとき
+| 症状 | 対処 |
+|---|---|
+| `ModuleNotFoundError`（pygrib など） | `python3` ではなく `/opt/anaconda3/envs/met_env_310/bin/python` を使う |
+| `Address already in use`（ポートが使用中） | `python server.py --port 8781` のように別のポートにする（URLのポートも変える） |
+| 画面に「manifest.json を読めません」「天気図がまだありません」 | 手順 1) の `make_charts.py` を先に実行する |
+| 画像が古い | 「最新を取得」を押す。RISHに新しい初期値がまだ無い場合は作られない |
+| 初期値のドロップダウンが変わらない | ブラウザを再読み込み（Cmd+R） |
+
+- サーバーは `127.0.0.1`（自分のPCだけ）で待ち受けます。**他の端末・インターネットには公開されません。**
+- 比較版（ECMWF・GFS・AIFS と GSM を同じ画面で比較）は後継の [nwp_chart_web](https://github.com/masauehr/nwp_chart_web) で、ポート 8790 を使うため、この版と同時に起動できます。
 
 ## 最新データの取得
 
