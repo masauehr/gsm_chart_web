@@ -1,5 +1,9 @@
 # CLAUDE.md — gsm_chart_web
 
+## 位置づけ（2026-11-04 方針変更）
+- **調査用**。リポジトリは **public**（README冒頭に調査用・ローカル専用と明記済み）。Webアプリは**ローカルで動かす**方針で、公開サーバー・GitHub Pages へは載せない（公開版は別リポジトリ nwp_chart_web）。
+- 気象庁GPV（RISH配信）のデータや作成画像はコミットしない（`data/`・`output/` はgit除外。外さない）。
+
 ## 概要
 京大RISH の GSM GRIB2 から気象庁ビューア風の天気図PNGを作り、ブラウザで閲覧するアプリ。詳しくは [gsm-chart-web.md](gsm-chart-web.md)、設計は [DESIGN.md](DESIGN.md)。
 
