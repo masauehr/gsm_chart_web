@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GSM天気図ビューア</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>GSM天気図ビューア</h1>
+  <label>初期値
+    <select id="initSel"></select>
+  </label>
+  <div id="regionBtns" class="seg" role="group" aria-label="地域"></div>
+  <span id="updated"></span>
+</header>
+
+<nav id="chartTabs" role="tablist" aria-label="図種"></nav>
+
+<main>
+  <div id="viewer">
+    <img id="chartImg" alt="天気図">
+    <div id="noData" hidden>この組み合わせの画像はありません</div>
+  </div>
+
+  <div id="controls">
+    <button id="btnFirst" title="最初 (Home)">⏮</button>
+    <button id="btnPrev" title="前 (←)">◀</button>
+    <button id="btnPlay" title="再生/停止 (Space)">▶</button>
+    <button id="btnNext" title="次 (→)">▶|</button>
+    <button id="btnLast" title="最後 (End)">⏭</button>
+    <input id="ftSlider" type="range" min="0" max="0" step="1" value="0">
+    <select id="speedSel" title="再生速度">
+      <option value="900">遅い</option>
+      <option value="500" selected>標準</option>
+      <option value="250">速い</option>
+    </select>
+    <a id="dlLink" download title="この画像を保存">保存</a>
+  </div>
+  <div id="timeInfo"></div>
+
+  <section id="thumbs" aria-label="同じ予報時間の図種一覧"></section>
+</main>
+
+<footer>
+  <p>データ: 気象庁 全球モデル(GSM) GPV（京都大学生存圏研究所 RISH 配信）／作図: 本アプリ。
+     ショートカット: ←→ 予報時間、↑↓ 図種、Space 再生</p>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>
