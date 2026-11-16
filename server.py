@@ -8,7 +8,7 @@
   GET  /api/status  → 更新ジョブの状態とログ末尾
 
 使用例:
-  python server.py                 # http://127.0.0.1:8780/
+  python server.py                 # http://127.0.0.1:8782/
   python server.py --port 9000
 外部公開はしない設計（127.0.0.1 固定）。LAN内の別端末から見る場合のみ --host 0.0.0.0 を明示する。
 """
@@ -121,7 +121,7 @@ class Handler(SimpleHTTPRequestHandler):
 def main():
     p = argparse.ArgumentParser(description="GSM天気図ビューアのサーバー")
     p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=8780)
+    p.add_argument("--port", type=int, default=8782)
     if any(a in sys.argv[1:] for a in ("?", "-?", "--?")):
         p.print_help()
         return

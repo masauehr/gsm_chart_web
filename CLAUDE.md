@@ -9,7 +9,7 @@
 
 ## 実行環境
 - Python: `/opt/anaconda3/envs/met_env_310/bin/python`（pygrib/cartopy/metpy/scipy/requests）。`python -I` は import できなくなるので使わない。
-- 作成: `python make_charts.py --latest` / 閲覧: `python server.py`（既定 http://127.0.0.1:8780/）
+- 作成: `python make_charts.py --latest` / 閲覧: `python server.py`（既定 http://127.0.0.1:8782/）
 
 ## 規約
 - コメント・UIは日本語。インデント: Python 4、JS/HTML/CSS 2。
@@ -31,4 +31,4 @@
 - 更新APIはローカル限定。GETでもPOSTでも `_local_only` を外さない。
 
 ## 画用紙版
-`web/board/`（http://127.0.0.1:8780/board/）。通常版 `web/app.js` とは独立。パネル単位（図種＋表示範囲）で管理し、localStorage キーは `gsmBoard.v2`（構造を変えたらキーを上げる）。上部メニューの高さは ResizeObserver で追従。操作は gsm-chart-web.md の表を参照。
+`web/board/`（http://127.0.0.1:8782/board/）。通常版 `web/app.js` とは独立。パネル単位（図種＋表示範囲）で管理し、localStorage キーは `gsmBoard.v2`（構造を変えたらキーを上げる）。上部メニューの高さは ResizeObserver で追従。操作は gsm-chart-web.md の表を参照。

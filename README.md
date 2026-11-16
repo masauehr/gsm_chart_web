@@ -29,8 +29,8 @@ cd ~/projects/gsm_chart_web
 /opt/anaconda3/envs/met_env_310/bin/python server.py
 
 # 3) ブラウザで開く
-#    通常版   : http://127.0.0.1:8780/
-#    画用紙版 : http://127.0.0.1:8780/board/
+#    通常版   : http://127.0.0.1:8782/
+#    画用紙版 : http://127.0.0.1:8782/board/
 ```
 
 ### 2回目以降（作成済みの画像を見るだけ）
@@ -43,7 +43,7 @@ cd ~/projects/gsm_chart_web
 ### バックグラウンドで起動・停止する場合
 ```bash
 nohup /opt/anaconda3/envs/met_env_310/bin/python server.py > /tmp/gsm_server.log 2>&1 &   # 起動
-kill $(lsof -ti :8780)                                                                      # 停止
+kill $(lsof -ti :8782)                                                                      # 停止
 ```
 
 ### うまくいかないとき
@@ -66,8 +66,8 @@ kill $(lsof -ti :8780)                                                          
 
 ## 画面
 
-- 通常版: <http://127.0.0.1:8780/> … 1枚ずつ閲覧
-- 画用紙版: <http://127.0.0.1:8780/board/> … 各高度の図を並べ、マウスで移動・拡大縮小、↑↓キーで予報時間を前後
+- 通常版: <http://127.0.0.1:8782/> … 1枚ずつ閲覧
+- 画用紙版: <http://127.0.0.1:8782/board/> … 各高度の図を並べ、マウスで移動・拡大縮小、↑↓キーで予報時間を前後
 
 ### 画用紙版の画面例
 
